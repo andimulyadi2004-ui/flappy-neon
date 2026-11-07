@@ -1,12 +1,21 @@
-"""
-FLAPPY NEON — game arcade Python + Kivy (100% tanpa HTML).
-Kontrol : sentuh / tap layar untuk terbang.
-Tujuan  : lewati pipa sebanyak mungkin, kejar skor tertinggi.
-"""
-
 import os
+import sys
 import math
 import random
+import traceback
+
+# Nangkep semua error biar gak "force close" diam-diam,
+# tapi ditulis ke file + ditampilin di layar.
+def _global_excepthook(exc_type, exc_value, exc_tb):
+    text = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    try:
+        with open(os.path.join(os.path.expanduser('~'), 'flappy_crash.log'), 'w') as f:
+            f.write(text)
+    except Exception:
+        pass
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+sys.excepthook = _global_excepthook
 
 from kivy.app import App
 from kivy.core.window import Window
@@ -15,33 +24,43 @@ from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.uix.button import Button
+from kivy.uix.boxlayout import BoxLayout
 from kivy.properties import NumericProperty, StringProperty
 from kivy.graphics import PushMatrix, PopMatrix, Rotate
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
-
 def asset(name):
     return os.path.join(BASE, 'assets', name)
 
-
-# ---------------- tuning game ----------------
-GRAVITY = -1500.0     # gravitasi (px/s^2)
-FLAP_V = 520.0        # kekuatan lompat (px/s)
-SPEED = 210.0         # kecepatan pipa awal (px/s)
-PIPE_W = 88.0         # lebar pipa
-GAP = 250.0           # jarak celah antar pipa
-SPAWN_EVERY = 2.0     # jarak spawn pipa (detik)
+GRAVITY = -1500.0
+FLAP_V = 520.0
+SPEED = 210.0
+PIPE_W = 88.0
+GAP = 250.0
+SPAWN_EVERY = 2.0
 BIRD_SIZE = 54.0
+
+
+class ErrorScreen(BoxLayout):
+    def __init__(self, text, **kw):
+        super(ErrorScreen, self).__init__(orientation='vertical', **kw)
+        self.padding = 16
+        title = Label(text='TERJADI ERROR (screenshot & kirim ke dev)',
+                      size_hint_y=0.12, font_size=20, bold=True, color=(1, 0.4, 0.4, 1))
+        body = Label(text=text, font_size=14, halign='left', valign='top', color=(1, 1, 1, 1))
+        body.bind(size=body.setter('text_size'))
+        self.add_widget(title)
+        self.add_widget(body)
 
 
 class GameWidget(Widget):
     score = NumericProperty(0)
     best = NumericProperty(0)
-    state = StringProperty('ready')   # ready | play | dead
+    state = StringProperty('ready')
 
     def __init__(self, **kw):
-        super().__init__(**kw)
+        super(GameWidget, self).__init__(**kw)
         self.vy = 0.0
         self.spawn_t = 0.0
         self.t = 0.0
@@ -49,11 +68,9 @@ class GameWidget(Widget):
         self.pipes = []
         self._load_best()
 
-        # background
         self.bg = Image(source=asset('bg.png'), allow_stretch=True, keep_ratio=False)
         self.add_widget(self.bg)
 
-        # tanah (2 tile biar bisa scroll mulus)
         self.grounds = [
             Image(source=asset('ground.png'), allow_stretch=True, keep_ratio=False),
             Image(source=asset('ground.png'), allow_stretch=True, keep_ratio=False),
@@ -61,7 +78,6 @@ class GameWidget(Widget):
         for g in self.grounds:
             self.add_widget(g)
 
-        # burung + rotasi
         self.bird = Image(source=asset('bird.png'), allow_stretch=True, keep_ratio=True,
                           size_hint=(None, None), size=(BIRD_SIZE, BIRD_SIZE))
         with self.bird.canvas.before:
@@ -71,14 +87,12 @@ class GameWidget(Widget):
             PopMatrix()
         self.add_widget(self.bird)
 
-        # skor
         self.score_lbl = Label(text='0', font_size=54, bold=True,
                                size_hint=(None, None), size=(240, 80),
                                color=(1, 1, 1, 1),
                                outline_color=(0, 0, 0, 0.8), outline_width=2)
         self.add_widget(self.score_lbl)
 
-        # pesan
         self.msg = Label(text='FLAPPY NEON\n\nTap layar untuk mulai',
                          font_size=30, bold=True, halign='center', valign='middle',
                          size_hint=(None, None), size=(420, 200),
@@ -86,7 +100,6 @@ class GameWidget(Widget):
                          outline_color=(0, 0, 0, 0.8), outline_width=2)
         self.add_widget(self.msg)
 
-        # tombol main lagi
         self.restart_btn = Button(text='MAIN LAGI', font_size=24, bold=True,
                                   size_hint=(None, None), size=(220, 64),
                                   background_color=(0.2, 0.85, 0.45, 1),
@@ -95,9 +108,8 @@ class GameWidget(Widget):
         self.add_widget(self.restart_btn)
 
         self._reset_world()
-        Clock.schedule_interval(self._update, 1.0 / 60.0)
+        Clock.schedule_interval(self._safe_update, 1.0 / 60.0)
 
-    # ---------------- layout ----------------
     def ground_h(self):
         return max(56.0, self.height * 0.09)
 
@@ -120,7 +132,6 @@ class GameWidget(Widget):
         self.msg.text_size = self.msg.size
         self.restart_btn.center = (W / 2, H * 0.34)
 
-    # ---------------- dunia game ----------------
     def _reset_world(self):
         for p in self.pipes:
             self.remove_widget(p['top'])
@@ -160,14 +171,12 @@ class GameWidget(Widget):
         bot.y = gh - 14
         bot.height = (gap_y - GAP / 2) - bot.y
 
-        # selipkan tepat di atas bg biar pipa ada DI BELAKANG tanah
         self.add_widget(bot, index=len(self.children) - 1)
         self.add_widget(top, index=len(self.children) - 1)
         self.pipes.append({'top': top, 'bot': bot, 'scored': False})
 
-    # ---------------- input ----------------
     def on_touch_down(self, touch):
-        if super().on_touch_down(touch):
+        if super(GameWidget, self).on_touch_down(touch):
             return True
         if self.state == 'ready':
             self.state = 'play'
@@ -181,7 +190,14 @@ class GameWidget(Widget):
         if self.state == 'dead':
             self._reset_world()
 
-    # ---------------- loop utama ----------------
+    def _safe_update(self, dt):
+        try:
+            self._update(dt)
+        except Exception:
+            Clock.unschedule(self._safe_update)
+            self.clear_widgets()
+            self.add_widget(ErrorScreen(traceback.format_exc()))
+
     def _update(self, dt):
         dt = min(dt, 0.05)
         W, H = self.size
@@ -190,7 +206,6 @@ class GameWidget(Widget):
         gh = self.ground_h()
         speed = SPEED + min(140.0, self.score * 5.0)
 
-        # scroll tanah
         if self.state != 'dead':
             self.ground_x = (self.ground_x - speed * dt) % W
             self.grounds[0].x = self.ground_x - W
@@ -204,7 +219,6 @@ class GameWidget(Widget):
             return
 
         if self.state == 'dead':
-            # burung jatuh ke tanah pas game over
             if self.bird.y > gh:
                 self.vy += GRAVITY * dt
                 self.bird.y = max(gh, self.bird.y + self.vy * dt)
@@ -212,7 +226,6 @@ class GameWidget(Widget):
                 self.bird_rot.angle = max(-90.0, self.bird_rot.angle - 300.0 * dt)
             return
 
-        # ---- state: play ----
         self.vy += GRAVITY * dt
         self.bird.y += self.vy * dt
         if self.bird.top > H + 40:
@@ -228,7 +241,6 @@ class GameWidget(Widget):
             self.spawn_t = 0.0
             self._spawn_pipe()
 
-        # hitbox burung (dikecilin dikit biar fair)
         bx1 = self.bird.x + 10
         by1 = self.bird.y + 10
         bx2 = self.bird.right - 10
@@ -238,18 +250,15 @@ class GameWidget(Widget):
         for p in self.pipes[:]:
             p['top'].x -= speed * dt
             p['bot'].x -= speed * dt
-
             if not p['scored'] and p['top'].x + PIPE_W < self.bird.x:
                 p['scored'] = True
                 self.score += 1
                 self.score_lbl.text = str(self.score)
-
             if p['top'].x < -PIPE_W - 30:
                 self.remove_widget(p['top'])
                 self.remove_widget(p['bot'])
                 self.pipes.remove(p)
                 continue
-
             for img in (p['top'], p['bot']):
                 if (bx1 < img.x + img.width and bx2 > img.x and
                         by1 < img.y + img.height and by2 > img.y):
@@ -279,7 +288,6 @@ class GameWidget(Widget):
         self.restart_btn.opacity = 1
         self.restart_btn.disabled = False
 
-    # ---------------- simpan skor terbaik ----------------
     def _best_path(self):
         return os.path.join(os.path.expanduser('~'), '.flappy_neon_best')
 
@@ -300,9 +308,11 @@ class GameWidget(Widget):
 
 class FlappyNeonApp(App):
     def build(self):
-        self.title = 'Flappy Neon'
         Window.clearcolor = (0.07, 0.04, 0.2, 1)
-        return GameWidget()
+        try:
+            return GameWidget()
+        except Exception:
+            return ErrorScreen(traceback.format_exc())
 
 
 if __name__ == '__main__':
