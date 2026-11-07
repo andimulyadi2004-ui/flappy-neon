@@ -1,0 +1,54 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache SDK/NDK buildozer
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            ~/.cache/pip
+          key: buildozer-v1
+
+      - name: Install dependensi sistem
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git zip unzip openjdk-17-jdk-headless \
+            autoconf libtool pkg-config zlib1g-dev libffi-dev \
+            libssl-dev cmake ccache
+          sudo apt-get install -y libncurses5-dev libncursesw5-dev libtinfo5 || true
+
+      - name: Install buildozer
+        run: python -m pip install -U pip buildozer cython virtualenv
+
+      - name: Build APK
+        run: buildozer -v android debug
+        env:
+          USE_CCACHE: '1'
+
+      - name: Kumpulkan APK
+        run: |
+          mkdir -p dist
+          cp "$(ls bin/*.apk | head -n 1)" dist/FlappyNeon.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flappy-apk
+          path: dist/FlappyNeon.apk
