@@ -23,7 +23,7 @@ jobs:
           path: |
             ~/.buildozer
             ~/.cache/pip
-          key: buildozer-v2-fix
+          key: buildozer-v3-ndk25b
 
       - name: Install dependensi sistem
         run: |
