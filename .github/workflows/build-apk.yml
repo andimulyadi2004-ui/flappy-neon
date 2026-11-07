@@ -17,19 +17,25 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Cache SDK/NDK buildozer
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
             ~/.cache/pip
-          key: buildozer-v3-ndk25b
+          key: buildozer-v4-java17
 
       - name: Install dependensi sistem
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential git zip unzip openjdk-17-jdk-headless \
+            build-essential git zip unzip \
             autoconf libtool pkg-config zlib1g-dev libffi-dev \
             libssl-dev cmake ccache libncurses5-dev libncursesw5-dev libtinfo5
 
